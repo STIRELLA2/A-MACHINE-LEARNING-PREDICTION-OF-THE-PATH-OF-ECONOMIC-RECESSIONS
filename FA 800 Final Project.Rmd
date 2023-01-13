@@ -1,0 +1,633 @@
+---
+title: "FE 800"
+author: "Spencer Tirella"
+date: "2022-09-25"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+library(fredr)
+FRED_API_KEY="cd758d0f93b061016a32d539846b7483"
+fredr_set_key(FRED_API_KEY)
+```
+
+## Data Sourcing
+
+```{r}
+FedFunds <- fredr(
+  series_id = "DFF",
+  observation_start = as.Date("2000-01-01"),
+  observation_end = as.Date("2022-10-01"),
+  frequency="m"
+)
+nrow(FedFunds)
+
+TenYTwoY <- fredr(
+  series_id = "T10Y2Y",
+  observation_start = as.Date("2000-01-01"),
+  observation_end = as.Date("2022-10-01"),
+    frequency="m"
+)
+nrow(TenYTwoY)
+
+NFCI <- fredr(
+  series_id = "NFCI",
+  observation_start = as.Date("2000-01-01"),
+  observation_end = as.Date("2022-10-08"),
+    frequency="m"
+)
+nrow(NFCI)
+
+UnEmploy <- fredr(
+  series_id = "UNRATE",
+  observation_start = as.Date("1999-12-01"),
+  observation_end = as.Date("2022-10-01"),
+  frequency="m"
+)
+nrow(UnEmploy)
+
+BusConditions <- fredr(
+  series_id = "GACDISA066MSFRBNY",
+  observation_start = as.Date("1999-09-01"),
+  observation_end = as.Date("2022-10-01"),
+  frequency="m"
+)
+nrow(BusConditions)
+
+UMICH <- fredr(
+  series_id = "MICH",
+  observation_start = as.Date("1999-11-01"),
+  observation_end = as.Date("2022-10-01"),
+  frequency="m"
+)
+nrow(UMICH)
+
+Recession <- fredr(
+  series_id = "USRECM",
+  observation_start = as.Date("1999-12-01"),
+  observation_end = as.Date("2022-10-01"),
+  frequency="m"
+)
+nrow(Recession)
+
+LMK <- fredr(
+  series_id = "FRBKCLMCIM",
+  observation_start = as.Date("1999-12-01"),
+  observation_end = as.Date("2022-10-01"),
+  frequency="m"
+)
+nrow(LMK)
+
+
+library("readxl")
+FFFutures<-read_excel("C:/Users/spenc/Desktop/Fed Funds Futures.xlsx")
+FFFutures$date <- as.Date(FFFutures$date)
+FFF<-data.frame(FFFutures$date,FFFutures$`Adj Close**`)
+names(FFF) <- c("date", "FFF")
+
+
+allvariables <- c(FedFunds,TenYTwoY,NFCI,UnEmploy,BusConditions,UMICH,Recession, FFF)
+
+library(dplyr)
+FS1 <- merge(FedFunds,TenYTwoY, by= "date")
+FS1 <- select(FS1,date,value.x,value.y)
+colnames(FS1) <-c("date","FedFunds","TenYTwoY")
+
+FS2 <- merge(FS1,NFCI, by= "date")
+FS2 <- select(FS2,colnames(FS1),value)
+names(FS2)[names(FS2) == "value"] <- "NFCI"
+
+FS3 <- merge(FS2,UnEmploy, by= "date")
+FS3 <- select(FS3,colnames(FS2),value)
+names(FS3)[names(FS3) == "value"] <- "UnEmploy"
+
+FS4 <- merge(FS3,Recession, by= "date")
+FS4 <- select(FS4,colnames(FS3),value)
+names(FS4)[names(FS4) == "value"] <- "Recession"
+
+FS5 <- merge(FS4,BusConditions, by= "date")
+FS5 <- select(FS5,colnames(FS4),value)
+names(FS5)[names(FS5) == "value"] <- "BusConditions"
+
+FS6 <- merge(FS5,UMICH, by= "date")
+FS6 <- select(FS6,colnames(FS5),value)
+names(FS6)[names(FS6) == "value"] <- "UMICH"
+
+FS7 <- merge(FS6,LMK, by= "date")
+FS7 <- select(FS7,colnames(FS6),value)
+names(FS7)[names(FS7) == "value"] <- "LMK"
+
+FinalSet <- merge(FS7,FFF, by= "date")
+
+head(FinalSet)
+
+```
+
+## Summary Statistics
+```{r}
+
+library(ggplot2)
+plot(FinalSet)
+
+library(TSstudio)
+par(mfrow = c(3, 3))
+plot(FinalSet$date, FinalSet$FedFunds)
+plot(FinalSet$date, FinalSet$TenYTwoY)
+plot(FinalSet$date, FinalSet$NFCI)
+plot(FinalSet$date, FinalSet$UnEmploy)
+plot(FinalSet$date, FinalSet$BusConditions)
+plot(FinalSet$date, FinalSet$UMICH)
+plot(FinalSet$date, FinalSet$FFF)
+plot(FinalSet$date, FinalSet$LMK)
+
+library(GGally)
+ggscatmat(FinalSet, columns = 1: ncol(FinalSet))
+```
+
+
+## Logistic Regression
+
+
+```{r}
+#Logistic Regression Full model
+train <- FinalSet[1:175,]
+test <- FinalSet[176:219,]
+
+model <- glm(Recession ~ ., family=binomial,data=train)
+summary(model)
+
+test$model <- predict(model, test, type = "response")
+logisticprediction <- ifelse(test$model>0.5, 1, 0)
+
+test <-test[,c(1,6,2,3,4,5,7,8,9,10)]
+Logistic_Predictions_by_date <- cbind(logisticprediction,test)
+Logistic_Predictions_by_date
+
+#Creating confusion matrix
+library(caret)
+logconfmatrix <- confusionMatrix(data=factor(logisticprediction), reference = factor(test$Recession))
+logconfmatrix
+
+```
+
+
+# Logistc Regression Visualizations
+
+```{r}
+par(mfrow = c(2, 4))
+
+model <- glm(Recession ~ FedFunds, family=binomial,data=FinalSet)
+summary(model)
+newdata <- data.frame(FedFunds=seq(min(FinalSet$FedFunds), max(FinalSet$FedFunds),len=500))
+newdata$Recession = predict(model, newdata, type="response")
+plot(Recession ~ FedFunds, data=FinalSet, col="steelblue")
+lines(Recession ~ FedFunds, newdata, lwd=2)
+
+model2 <- glm(Recession ~ UnEmploy, family=binomial,data=FinalSet)
+summary(model2)
+newdata <- data.frame(UnEmploy=seq(min(FinalSet$UnEmploy), max(FinalSet$UnEmploy),len=500))
+newdata$Recession = predict(model2, newdata, type="response")
+plot(Recession ~ UnEmploy, data=FinalSet, col="steelblue")
+lines(Recession ~ UnEmploy, newdata, lwd=2)
+
+model3 <- glm(Recession ~ NFCI, family=binomial,data=FinalSet)
+summary(model3)
+newdata <- data.frame(NFCI=seq(min(FinalSet$NFCI), max(FinalSet$NFCI),len=500))
+newdata$Recession = predict(model3, newdata, type="response")
+plot(Recession ~ NFCI, data=FinalSet, col="steelblue")
+lines(Recession ~ NFCI, newdata, lwd=2)
+
+model4 <- glm(Recession ~ BusConditions, family=binomial,data=FinalSet)
+summary(model4)
+newdata <- data.frame(BusConditions=seq(min(FinalSet$BusConditions), max(FinalSet$BusConditions),len=500))
+newdata$Recession = predict(model4, newdata, type="response")
+plot(Recession ~ BusConditions, data=FinalSet, col="steelblue")
+lines(Recession ~ BusConditions, newdata, lwd=2)
+
+model5 <- glm(Recession ~ UMICH, family=binomial,data=FinalSet)
+summary(model5)
+newdata <- data.frame(UMICH=seq(min(FinalSet$UMICH), max(FinalSet$UMICH),len=500))
+newdata$Recession = predict(model5, newdata, type="response")
+plot(Recession ~ UMICH, data=FinalSet, col="steelblue")
+lines(Recession ~ UMICH, newdata, lwd=2)
+
+model6 <- glm(Recession ~ FFF, family=binomial,data=FinalSet)
+summary(model6)
+newdata <- data.frame(FFF=seq(min(FinalSet$FFF), max(FinalSet$FFF),len=500))
+newdata$Recession = predict(model6, newdata, type="response")
+plot(Recession ~ FFF, data=FinalSet, col="steelblue")
+lines(Recession ~ FFF, newdata, lwd=2)
+
+model7 <- glm(Recession ~ TenYTwoY, family=binomial,data=FinalSet)
+summary(model7)
+newdata <- data.frame(TenYTwoY=seq(min(FinalSet$TenYTwoY), max(FinalSet$TenYTwoY),len=500))
+newdata$Recession = predict(model7, newdata, type="response")
+plot(Recession ~ TenYTwoY, data=FinalSet, col="steelblue")
+lines(Recession ~ TenYTwoY, newdata, lwd=2)
+
+model8 <- glm(Recession ~ LMK, family=binomial,data=FinalSet)
+summary(model7)
+newdata <- data.frame(LMK=seq(min(FinalSet$LMK), max(FinalSet$LMK),len=500))
+newdata$Recession = predict(model8, newdata, type="response")
+plot(Recession ~ LMK, data=FinalSet, col="steelblue")
+lines(Recession ~ LMK, newdata, lwd=2)
+
+```
+#Logistic Regression Decision Boundary
+```{r}
+
+boundary <- function(model, data, class = NULL, predict_type = "class",
+  resolution = 100, showgrid = TRUE, ...) {
+
+  if(!is.null(class)) cl <- data[,class] else cl <- 1
+  data <- data[,1:2]
+  k <- length(unique(cl))
+
+  plot(data, col = as.integer(cl)+1L, pch = as.integer(cl)+1L, ...)
+
+  r <- sapply(data, range, na.rm = TRUE)
+  xs <- seq(r[1,1], r[2,1], length.out = resolution)
+  ys <- seq(r[1,2], r[2,2], length.out = resolution)
+  g <- cbind(rep(xs, each=resolution), rep(ys, time = resolution))
+  colnames(g) <- colnames(r)
+  g <- as.data.frame(g)
+
+  p <- predict(model, g, type = predict_type)
+  if(is.list(p)) p <- p$class
+  p <- as.factor(p)
+
+  if(showgrid) points(g, col = as.integer(p)+1L, pch = ".")
+
+  z <- matrix(as.integer(p), nrow = resolution, byrow = TRUE)
+  contour(xs, ys, z, add = TRUE, drawlabels = FALSE,
+    lwd = 2, levels = (1:(k-1))+.5)
+
+  invisible(z)
+}
+
+
+model1 <- glm(Recession ~NFCI+BusConditions, data = FinalSet,  family=binomial(link='logit'))
+class(model1) <- c("lr", class(model1))
+
+# specify the cutoff point for prediction
+
+x <- pp[c("NFCI", "BusConditions","Recession")]
+
+predict.lr <- function(object, x, ...)
+  predict.glm(object, x, type = "response") > .5
+
+boundary(model1, x,class="Recession", main = "Logistic Regression Decision Boundary")
+
+
+```
+
+
+
+```{r}
+# Logistic Regression 
+
+# Likelihood ratio test
+par(mfrow = c(1, 4))
+Logistic.model <- glm(Recession ~ .,data=FinalSet)
+summary(Logistic.model)
+anova(Logistic.model)
+plot(Logistic.model)
+
+
+#Logistic Regression Stepwise model
+par(mfrow = c(1, 4))
+step.logistic.model <- step(Logistic.model, direction='both', scope=formula(Logistic.model), trace=0)
+summary(step.logistic.model)
+anova(step.logistic.model)
+plot(step.logistic.model)
+
+library(lmtest)
+lrtest(Logistic.model, step.logistic.model) 
+
+```
+
+
+## Linear MOdel
+
+```{r}
+#Linear Regression Full model
+train <- FinalSet[1:175,]
+test <- FinalSet[176:219,]
+
+linmodel <- lm(Recession ~ .,data=train)
+summary(linmodel)
+
+test$model <- predict(linmodel, test, type = "response")
+linearprediction <- ifelse(test$model>0.5, 1, 0)
+
+test <-test[,c(1,6,2,3,4,5,7,8,9,10)]
+Linear_Predictions_by_date <- cbind(linearprediction,test)
+Linear_Predictions_by_date
+
+library(caret)
+#Creating confusion matrix
+linconfmatrix <- confusionMatrix(data=factor(linearprediction), reference = factor(test$Recession))
+linconfmatrix
+
+```
+
+## Linear Model - Predicting Fed Funds
+
+```{r}
+#Linear Regression Full model
+train <- FinalSet[1:175,]
+test <- FinalSet[176:219,]
+
+linmodel2 <- lm(FedFunds ~ .,data=train)
+summary(linmodel2)
+#Step
+lin.step.model2 <- step(linmodel2, direction='both', scope=formula(linmodel2), trace=0)
+summary(lin.step.model2)
+
+#Points not in Step
+linmodel3 <- lm(FedFunds ~ TenYTwoY+NFCI+UnEmploy+Recession+BusConditions+UMICH+LMK,data=train)
+summary(linmodel3)
+
+test$model <- predict(linmodel3, test, type = "response")
+FedFundsPrediction <- test$model
+
+Linear_Predictions_by_date2 <- cbind(FedFundsPrediction,linearprediction,test)
+Linear_Predictions_by_date2
+
+FFFnorm <- 100-test$FFF
+
+ggplot(test, aes(date)) + 
+  geom_line(aes(y = FedFunds, colour = "Actual Fed Funds")) + 
+  geom_line(aes(y = FedFundsPrediction, colour = "Linear Model Feds Funds Prediction")) + 
+  geom_line(aes(y = FFFnorm, colour = "Actual Fed Funds Futures"))
+
+
+```
+
+
+##Linear Model Decision Boundary
+
+```{r}
+
+
+model2 <- lm(Recession ~NFCI+BusConditions, data = FinalSet,  family=binomial(link='logit'))
+class(model2) <- c("lr", class(model2))
+
+# specify the cutoff point for prediction
+
+x <- FinalSet[c("NFCI", "BusConditions","Recession")]
+
+predict.lr <- function(object, x, ...)
+  predict.lm(object, x, type = "response") > .5
+
+boundary(model2, x,class="Recession", main = "Linear Regression Decision Boundary")
+```
+
+
+```{r}
+
+par(mfrow = c(1, 4))
+# Fit the full model 
+lin.model <- lm(Recession ~ .,data=FinalSet)
+summary(lin.model)
+anova(lin.model)
+plot(lin.model)
+
+# Stepwise regression model
+par(mfrow = c(1, 4))
+lin.step.model <- step(lin.model, direction='both', scope=formula(lin.model), trace=0)
+summary(lin.step.model)
+anova(lin.step.model)
+plot(lin.step.model)
+
+# Likelihood ratio test
+library(lmtest)
+lrtest(lin.model, lin.step.model)
+
+```
+
+
+
+
+## Neural Network 
+
+```{r}
+library(keras)
+library(mlbench)
+library(dplyr)
+library(magrittr)
+library(neuralnet)
+
+n <- neuralnet(Recession ~  TenYTwoY+NFCI
+               +UnEmploy+BusConditions+FFF+LMK,
+               data = FinalSet,
+               hidden = 3,
+               linear.output = F,
+               act.fct = "logistic")
+
+
+plot(n,col.hidden = 'darkgreen',     
+col.hidden.synapse = 'darkgreen',
+     show.weights = T,
+     information = T,
+     fill = 'lightblue')
+
+summary(n)
+
+```
+
+
+## Neural Network Model
+
+```{r}
+## Prediction using neural network
+
+trainnn <- FinalSet[1:175,]
+testnn <- FinalSet[176:219,]
+
+n <- neuralnet(Recession ~  TenYTwoY+NFCI +UnEmploy+BusConditions+FFF+LMK, data = trainnn,
+               hidden = 3, linear.output = F,  act.fct = "logistic")
+
+Predict=compute(n,testnn)
+Predict$net.result
+
+nnprob <- Predict$net.result
+nnpred <- ifelse(nnprob>0.3, 1, 0)
+
+testnn2 <-testnn[,c(1,6,2,3,4,5,7,8,9)]
+
+NN_Predictions_by_date <- cbind(nnpred,testnn2)
+NN_Predictions_by_date
+
+#Creating confusion matrix
+library(caret)
+NNconfmatrix <- confusionMatrix(data=factor(nnpred), reference = factor(testnn$Recession))
+NNconfmatrix
+
+```
+
+
+##Plots with Neural Networks
+
+```{r}
+
+library(zoo)
+Year_mon <- as.yearmon(FinalSet$date, format = "%Y-%m-%d")
+pp<-cbind(FinalSet,Year_mon)
+
+n2 <- neuralnet(Recession ~  FedFunds+TenYTwoY+NFCI
+               +UnEmploy+BusConditions+UMICH+FFF+LMK,
+               data = FinalSet,
+               hidden = 3,
+               linear.output = F)
+
+Z <- compute(n2,FinalSet)
+
+breaks <- c(0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1)
+# specify interval/bin labels
+Z2 <- cut(Z$net.result,breaks=breaks)
+Z3 <- cbind(Z,Z2)
+
+library(ggplot2)
+
+(ggplot(FinalSet,aes(x=NFCI,y=BusConditions,col=Recession))+geom_point(show.legend = F)
++geom_hline(yintercept = 0)
++geom_vline(xintercept = 0)
++geom_text(label=pp$Year_mon,check_overlap = T,show.legend = F)
++theme_bw(base_size = 15)
++ggtitle('Two Factors By Recession'))
+
+
+xvalue <- NFCI
+yvalue <- BusConditions
+
+x_min <- min(xvalue$value)
+x_max <- max(xvalue$value)
+y_min <- min(yvalue$value) 
+y_max <- max(yvalue$value)
+grid <- as.data.frame(expand.grid(seq(x_min, x_max, by = (x_max-x_min)/sqrt(121)), seq(y_min, y_max, by =(y_max-y_min)/sqrt(121))))
+area <- grid[1:219,]
+nrow(area)
+nrow(FinalSet)
+
+
+(ggplot(FinalSet,aes(x=NFCI,y=BusConditions,col=Recession))
++geom_point(show.legend = F)
++geom_tile(aes(x=area$Var1,y=area$Var2,color=Z$net.result), alpha = 0.3, show.legend = T)
++scale_color_gradient("Prediction", low = "blue", high = "red")
++geom_text(label=pp$Year_mon,check_overlap = T,show.legend = F)
++geom_hline(yintercept = 0)
++geom_vline(xintercept = 0)
++ggtitle('Neural Network Decision Boundary')
+)
+
+
+
+
+```
+
+## Forest Model
+
+
+#Variable SIgnficance & outlier detection
+```{r}
+#Decision Tree
+library(party)
+library(rpart)
+library(rpart.plot)
+
+output.tree <- ctree(
+Recession ~ TenYTwoY+NFCI +UnEmploy+BusConditions+FFF+LMK, 
+data = FinalSet)
+
+output.tree2 <- rpart(
+Recession ~ TenYTwoY+NFCI +UnEmploy+BusConditions+FFF+LMK, 
+data = FinalSet)
+
+# Plot the tree.
+plot(output.tree)
+rpart.plot(output.tree2)
+
+```
+
+#Train/Test Model
+```{r}
+#Decision Tree 
+train <- FinalSet[1:175,]
+test <- FinalSet[176:219,]
+
+  tree.model <- ctree(
+  Recession ~ TenYTwoY+NFCI +UnEmploy+BusConditions+FFF+LMK, 
+  data = train)
+  
+rfpred <- predict(tree.model, test, type = "response")
+treeprediction <- ifelse(rfpred>0.5, 1, 0)
+
+test <-test[,c(1,6,2,3,4,5,7,8,9,10)]
+Tree_Predictions_by_date <- cbind(treeprediction,test)
+Tree_Predictions_by_date
+
+```
+
+##Decision Tree Model Decision Boundary
+
+```{r}
+library(randomForest)
+model3 <- randomForest(Recession ~NFCI+LMK, data = FinalSet)
+x <- FinalSet[c("NFCI", "LMK","Recession")]
+boundary(model3, x,class="Recession", main = "Decision Tree Decision Boundary")
+
+(ggplot(FinalSet,aes(x=NFCI,y=LMK,col=Recession))+geom_point(show.legend = F)
++geom_hline(yintercept = -1.1)
++geom_vline(xintercept = 0.32)
++geom_text(label=pp$Year_mon,check_overlap = T,show.legend = F)
++theme_bw(base_size = 15)
++ggtitle('Decision Tree Two Factors By Recession'))
+
+```
+
+#Model Accuracy
+```{r}
+#Creating confusion matrix
+library(caret)
+Treeconfmatrix <- confusionMatrix(data=factor(treeprediction), reference = factor(test$Recession))
+Treeconfmatrix
+
+```
+#Combined Time Series
+```{r}
+
+p1 <- ggplot(test, aes(x=date, y=logisticprediction))+  geom_bar(stat="identity")+ theme_minimal() + theme(axis.title.x = element_blank(), axis.text.x = element_blank())
+p2 <- ggplot(test, aes(x=date, y=linearprediction))+  geom_bar(stat="identity")+ theme_minimal() + 
+      theme(axis.title.x = element_blank(), axis.text.x = element_blank())
+p3 <- ggplot(test, aes(x=date, y=nnpred))+  geom_bar(stat="identity")+ theme_minimal() + 
+      theme(axis.title.x = element_blank(), axis.text.x = element_blank())
+p4 <- ggplot(test, aes(x=date, y=treeprediction))+  geom_bar(stat="identity")+ theme_minimal() + 
+      theme(axis.title.x = element_blank(), axis.text.x = element_blank())
+p5 <- ggplot(test, aes(x=date, y=NFCI))+ geom_line()+ theme_minimal() + 
+      theme(axis.title.x = element_blank(), axis.text.x = element_blank())
+p6 <- ggplot(test, aes(x=date, y=LMK))+ geom_line()+ theme_minimal() + 
+      theme(axis.title.x = element_blank(), axis.text.x = element_blank())
+p7 <- ggplot(test, aes(x=date, y=BusConditions))+ geom_line()+ theme_minimal() + 
+      theme(axis.title.x = element_blank(),axis.text.x = element_text(angle=90))+scale_x_date(date_labels = "%m-%Y")+scale_x_date(date_breaks = "3 month") 
+test
+
+library(grid)
+grid.newpage()
+grid.draw(rbind(ggplotGrob(p1), ggplotGrob(p2), ggplotGrob(p3), ggplotGrob(p4), ggplotGrob(p5), ggplotGrob(p6), ggplotGrob(p7), size = "last"))
+
+```
+
+```{r}
+logconfmatrix ##Current prediction=1  BA=0.6905
+linconfmatrix ##Current prediction =0  BA = 0.7262
+NNconfmatrix ##Current prediction =1  BA = 0.63095 
+Treeconfmatrix ##Current prediction = 0 BA =0.7262 
+
+```
